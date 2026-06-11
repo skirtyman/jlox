@@ -19,6 +19,30 @@ class Scanner
     // The line within the source file that is currently being scanned. This is used for error detection / reporting.
     private int line = 1;
 
+    // Store a hashmap of the reserved keywords in Lox.
+    private static final Map<String, TokenType> keywords;
+
+    static
+    {
+        keywords = new HashMap<>();
+        keywords.put("and", AND);
+        keywords.put("class", CLASS);
+        keywords.put("else", ELSE);
+        keywords.put("false", FALSE);
+        keywords.put("for", FOR);
+        keywords.put("fun", FUN);
+        keywords.put("if", IF);
+        keywords.put("nil", NIL);
+        keywords.put("or", OR);
+        keywords.put("print", PRINT);
+        keywords.put("return", RETURN);
+        keywords.put("super", SUPER);
+        keywords.put("this", THIS);
+        keywords.put("true", TRUE);
+        keywords.put("var", VAR);
+        keywords.put("while", WHILE);
+    }
+
     Scanner(String source)
     {
         this.source = source;
@@ -83,10 +107,73 @@ class Scanner
             case '\n':
                 line++;
                 break;
+            case '"': string(); break;
             default:
-                Lox.error(line, "Unexpected character. ");
+                if (isDigit(c)) number();
+                else if (isAlpha(c)) identifier();
+                else Lox.error(line, "Unexpected character. ");
                 break;
         }
+    }
+
+    // Scan an identifier within the source string. This can either be a reserved keyword or user-defined variable.
+    // Each case can be determined using a hashmap which can be used to detect if a user has used a reserved keyword
+    // as an identifier.
+    private void identifier()
+    {
+        // Consume the names of the keywords / user-defined variables.
+        while (isAlphaNumeric(peek())) advance();
+
+        // Extract the text from the source string.
+        String text = source.substring(start, current);
+        TokenType type = keywords.get(text);
+
+        // If the extracted text from the source string does not match a reserved keywords then create a token of type
+        // IDENTIFIER (representing a user-defined variable), otherwise create a token of the reserved keyword.
+        if (type == null) type = IDENTIFIER;
+        addToken(type);
+    }
+
+    // Scans a number according to Lox's grammar. This is in the same way as a string.
+    private void number()
+    {
+        // Advance the current pointer in the source string whilst we have found digits.
+        while (isDigit(peek())) advance();
+
+        // Look for the fractional part of the number.
+        if (peek() == '.' && isDigit(peekNext()))
+        {
+            // Consume the "."
+            advance();
+            // Consume the rest of the digits in the fractional part of the number.
+            while (isDigit(peek())) advance();
+        }
+
+        // Add the token to the list of scanned tokens.
+        addToken(NUMBER, Double.parseDouble(source.substring(start, current)));
+    }
+
+    // Scans a string in the source and returns a token, according to Lox's grammar.
+    private void string()
+    {
+        while (peek() != '"' && !isAtEnd())
+        {
+            if (peek() == '\n') line++;
+            advance();
+        }
+
+        if (isAtEnd())
+        {
+            Lox.error(line, "Unterminated string. ");
+            return;
+        }
+
+        // Consuming the closing ".
+        advance();
+
+        // Trim the surrounding quotes.
+        String value = source.substring(start + 1, current - 1);
+        addToken(STRING, value);
     }
 
     // Check if the next character in the source string is a certain character.
@@ -108,6 +195,18 @@ class Scanner
         if (isAtEnd()) return '\0';
         return source.charAt(current);
     }
+
+    private char peekNext()
+    {
+        if (current + 1 >= source.length()) return '\0';
+        // Peek at the character 2 ahead of the scanner. This allows to peek at characters after others, such as
+        // in the case of numerical values with a fractional part.
+        return source.charAt(current + 1);
+    }
+
+    private boolean isAlphaNumeric(char c) { return isAlpha(c) || isDigit(c); }
+    private boolean isAlpha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
+    private boolean isDigit(char c) { return c >= '0' && c <= '9'; }
 
     // Check if the scanner has consumed the entire source string.
     private boolean isAtEnd() { return current >= source.length(); }
