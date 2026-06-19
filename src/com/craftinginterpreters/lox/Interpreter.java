@@ -1,15 +1,19 @@
 package com.craftinginterpreters.lox;
 
 import java.nio.DoubleBuffer;
+import java.util.List;
 
-class Interpreter implements Expr.Visitor<Object>
+class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void>
 {
-    void interpret(Expr expression)
+    // Define the environment for global variables within a Lox program.
+    private Environment environment = new Environment();
+
+    void interpret(List<Stmt> statements)
     {
         try
         {
-            Object value = evaluate(expression);
-            System.out.println(stringify(value));
+            for (Stmt statement : statements)
+                execute(statement);
         }
         catch (RuntimeError error)
         {
@@ -17,12 +21,82 @@ class Interpreter implements Expr.Visitor<Object>
         }
     }
 
+    private void execute(Stmt stmt)
+    {
+        stmt.accept(this);
+    }
+
+    @Override
+    public Void visitVarStmt(Stmt.Var stmt)
+    {
+        Object value = null;
+        // Work out the value of the variable declaration by evaluating the initializer.
+        // We allow variables to be defined without an initializer, simply adding them to the global environment.
+        if (stmt.initialiser != null) value = evaluate(stmt.initialiser);
+
+        // Define the global variable within the global environment.
+        environment.define(stmt.name.lexeme, value);
+        return null;
+    }
+
+
+    @Override
+    public Void visitPrintStmt(Stmt.Print stmt)
+    {
+        Object value = evaluate(stmt.expression);
+        System.out.println(stringify(value));
+        return null;
+    }
+
+    @Override
+    public Void visitExpressionStmt(Stmt.Expression stmt)
+    {
+        evaluate(stmt.expression);
+        return null;
+    }
+
+    @Override
+    public Object visitAssignExpr(Expr.Assign expr)
+    {
+        Object value = evaluate(expr.value);
+        environment.assign(expr.name, value);
+        return value;
+    }
+
+    @Override
+    public Void visitBlockStmt(Stmt.Block stmt)
+    {
+        executeBlock(stmt.statements, new Environment(environment));
+        return null;
+    }
+
+    void executeBlock(List<Stmt> statements, Environment environment)
+    {
+        // Store a local copy of the environment before executing the block.
+        Environment previous = this.environment;
+
+        // Execute the block making any necessary changes.
+        try
+        {
+            // Change the current environment of the interpreter to the new one to be executed,
+            // and execute the statements within it sequentially.
+            this.environment = environment;
+            for (Stmt statement : statements)
+                execute(statement);
+        }
+        finally
+        {
+            // Update the current environment of the interpreter to the old state.
+            this.environment = previous;
+        }
+    }
 
     @Override
     public Object visitLiteralExpr(Expr.Literal expr) { return expr.value; }
 
     @Override
     public Object visitGroupingExpr(Expr.Grouping expr) { return evaluate(expr.expression); }
+
     private Object evaluate(Expr expr) { return expr.accept(this); }
 
     @Override
@@ -93,6 +167,9 @@ class Interpreter implements Expr.Visitor<Object>
         // Unreachable
         return null;
     }
+
+    @Override
+    public Object visitVariableExpr(Expr.Variable expr) { return environment.get(expr.name); }
 
     private void checkNumberOperand(Token operator, Object operand)
     {
