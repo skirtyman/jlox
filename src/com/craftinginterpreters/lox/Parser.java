@@ -35,6 +35,7 @@ class Parser
     {
         try
         {
+            if (match(FUN)) return function("function");
             if (match(VAR)) return varDeclaration();
             return statement();
         }
@@ -43,6 +44,33 @@ class Parser
             synchronize();
             return null;
         }
+    }
+
+    // Parse a function declaration.
+    private Stmt.Function function(String kind)
+    {
+        Token name = consume(IDENTIFIER, "Expect " + kind + " name. ");
+
+        consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
+        // Parse the list of the arguments in the function declaration.
+        List<Token> parameters = new ArrayList<>();
+        if (!check(RIGHT_PAREN))
+        {
+            do
+            {
+                if (parameters.size() >= 255)
+                {
+                    error(peek(), "Can't have more than 255 parameters.");
+                }
+                parameters.add(consume(IDENTIFIER, "Expect parameter name."));
+            } while(match(COMMA));
+        }
+        consume(RIGHT_PAREN, "Expect ')' after parameters.");
+
+        // Parse the body of the function declaration.
+        consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
+        List<Stmt> body = block();
+        return new Stmt.Function(name, parameters, body);
     }
 
     // Parse a given statement looking at the produced tokens from the scanner.
@@ -54,6 +82,7 @@ class Parser
         if (match(WHILE)) return whileStatement();
         if (match(IF)) return ifStatement();
         if (match(FOR)) return forStatement();
+        if (match(RETURN)) return returnStatement();
 
         // Default to parsing an expression statement if no other match can be found.
         return expressionStatement();
@@ -167,6 +196,19 @@ class Parser
         }
         return new Stmt.If(condition, thenBranch, elseBranch);
 
+    }
+
+    private Stmt returnStatement()
+    {
+        Token keyword = previous();
+        Expr value = null;
+        if (!check(SEMICOLON))
+        {
+            value = expression();
+        }
+
+        consume(SEMICOLON, "Expect ';' after return value.");
+        return new Stmt.Return(keyword, value);
     }
 
     private Stmt expressionStatement()
@@ -311,7 +353,56 @@ class Parser
             return new Expr.Unary(operator, right);
         }
 
-        return primary();
+        return call();
+    }
+
+    // Parse a function call.
+    private Expr call()
+    {
+        // Parse the function callee using recursive descent, this is usually a name but can be a literal,
+        // based off of the grammar. This is not an issue as we can catch and throw an error at runtime
+        // within the interpreter.
+        Expr expr = primary();
+
+        // Parse the arbitrary number of parameters, such as fn(1)(2)(3).
+        while (true)
+        {
+            // A set of arguments has been found.
+            if (match(LEFT_PAREN))
+            {
+                // Parse the rest of the arguments.
+                expr = finishCall(expr);
+            }
+            else
+            {
+                // No more sets of arguments have been found and therefore terminate the loop.
+                break;
+            }
+        }
+
+        return expr;
+    }
+
+    private Expr finishCall(Expr callee)
+    {
+        List<Expr> arguments = new ArrayList<>();
+        if (!check(RIGHT_PAREN))
+        {
+            do
+            {
+                // Limit the total number of arguments a function can have to ensure compatibility with Clox.
+                if (arguments.size() >= 255)
+                {
+                    // We do not throw an error because the parser is not in an invalid state so does not
+                    // need to go into panic mode and resynchronise.
+                    error(peek(), "Can't have more than 255 arguments.");
+                }
+                arguments.add(expression());
+            } while (match(COMMA));
+        }
+
+        Token paren = consume(RIGHT_PAREN, "Expect ')' after arguments. ");
+        return new Expr.Call(callee, paren, arguments);
     }
 
     private Expr primary()
