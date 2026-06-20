@@ -22,7 +22,7 @@ class Environment
     {
         if (values.containsKey(name.lexeme))
             return values.get(name.lexeme);
-        // Recusively lookup values in an enclosing environment.
+        // Recursively lookup values in an enclosing environment.
         if (enclosing != null) return enclosing.get(name);
 
         throw new RuntimeError(name, "Undefined variable '" + name.lexeme + "'.");
@@ -32,8 +32,15 @@ class Environment
     void assign(Token name, Object value)
     {
         if (values.containsKey(name.lexeme))
+        {
             values.put(name.lexeme, value);
-        if (enclosing != null) enclosing.assign(name, value);
+            return;
+        }
+        if (enclosing != null)
+        {
+            enclosing.assign(name, value);
+            return;
+        }
         throw new RuntimeError(name, "Undefined variable '" + name.lexeme + "'.");
     }
 }

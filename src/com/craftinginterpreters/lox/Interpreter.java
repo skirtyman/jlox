@@ -14,8 +14,7 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void>
         {
             for (Stmt statement : statements)
                 execute(statement);
-        }
-        catch (RuntimeError error)
+        } catch (RuntimeError error)
         {
             Lox.runtimeError(error);
         }
@@ -39,6 +38,15 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void>
         return null;
     }
 
+    @Override
+    public Void visitWhileStmt(Stmt.While stmt)
+    {
+        while (isTruthy(evaluate(stmt.condition)))
+        {
+            execute(stmt.body);
+        }
+        return null;
+    }
 
     @Override
     public Void visitPrintStmt(Stmt.Print stmt)
@@ -70,6 +78,20 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void>
         return null;
     }
 
+    @Override
+    public Void visitIfStmt(Stmt.If stmt)
+    {
+        if (isTruthy(evaluate(stmt.condition)))
+        {
+            execute(stmt.thenBranch);
+        }
+        else if (stmt.elseBranch != null)
+        {
+            execute(stmt.elseBranch);
+        }
+        return null;
+    }
+
     void executeBlock(List<Stmt> statements, Environment environment)
     {
         // Store a local copy of the environment before executing the block.
@@ -89,6 +111,23 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void>
             // Update the current environment of the interpreter to the old state.
             this.environment = previous;
         }
+    }
+
+    @Override
+    public Object visitLogicalExpr(Expr.Logical expr)
+    {
+        Object left = evaluate(expr.left);
+
+        if (expr.operator.type == TokenType.OR)
+        {
+            if (isTruthy(left)) return left;
+        }
+        else
+        {
+            if (!isTruthy(left)) return left;
+        }
+
+        return evaluate(expr.right);
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.craftinginterpreters.lox;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static com.craftinginterpreters.lox.TokenType.*;
@@ -50,6 +51,9 @@ class Parser
         // Print token has been found.
         if (match(PRINT)) return printStatement();
         if (match(LEFT_BRACE)) return new Stmt.Block(block());
+        if (match(WHILE)) return whileStatement();
+        if (match(IF)) return ifStatement();
+        if (match(FOR)) return forStatement();
 
         // Default to parsing an expression statement if no other match can be found.
         return expressionStatement();
@@ -68,11 +72,101 @@ class Parser
         return new Stmt.Var(name, initializer);
     }
 
+    private Stmt forStatement()
+    {
+        consume(LEFT_PAREN, "Expect '(' after 'for'.");
+
+        // Parsing loop initializer.
+        Stmt initializer;
+        if (match(SEMICOLON))
+        {
+            initializer = null;
+        }
+        else if (match(VAR))
+        {
+            initializer = varDeclaration();
+        }
+        else
+        {
+            initializer = expressionStatement();
+        }
+
+        // Parsing the loop condition
+        Expr condition = null;
+        // Check if a condition has been supplied and it is not just a semicolon.
+        if (!check(SEMICOLON))
+        {
+            condition = expression();
+        }
+        consume(SEMICOLON, "Expect ';' after loop condition. ");
+
+        // Parsing the loop increment.
+        Expr increment = null;
+        if (!check(RIGHT_PAREN))
+        {
+            increment = expression();
+        }
+        consume(RIGHT_PAREN, "Expect ')' after for clauses. ");
+
+        // Parse the loop body
+        Stmt body = statement();
+
+        // De-sugar the for loop into while loop syntax.
+        if (increment != null)
+        {
+            // If the increment is not null, then create a block which stores a list of statements of the following form.
+            // ```lox: { <loop body>; <increment>; } ```
+            body = new Stmt.Block(
+                    Arrays.asList(body, new Stmt.Expression(increment))
+            );
+        }
+
+        // Parse the condition. We assume that if a condition in the for loop has not been specified then this results
+        // in an infinite while loop.
+        if (condition == null) condition = new Expr.Literal(true);
+        // The de-sugared For loop, represented as a while loop.
+        body = new Stmt.While(condition, body);
+
+        // Parse the initalizer.
+        if (initializer != null)
+        {
+            body = new Stmt.Block(Arrays.asList(initializer, body));
+        }
+
+        return body;
+    }
+
+    private Stmt whileStatement()
+    {
+        consume(LEFT_PAREN, "Expect '(' after 'while'. ");
+        Expr condition = expression();
+        consume(RIGHT_PAREN, "Expect ')' after 'while'. ");
+        Stmt body = statement();
+
+        return new Stmt.While(condition, body);
+    }
+
     private Stmt printStatement()
     {
         Expr value = expression();
         consume(SEMICOLON, "Expect ';' after value.");
         return new Stmt.Print(value);
+    }
+
+    private Stmt ifStatement()
+    {
+        consume(LEFT_PAREN, "Expect '(' after 'if'. ");
+        Expr condition = expression();
+        consume(RIGHT_PAREN, "Expect ')' after 'if'. ");
+
+        Stmt thenBranch = statement();
+        Stmt elseBranch = null;
+        if (match(ELSE))
+        {
+            elseBranch = statement();
+        }
+        return new Stmt.If(condition, thenBranch, elseBranch);
+
     }
 
     private Stmt expressionStatement()
@@ -98,7 +192,7 @@ class Parser
 
     private Expr assignment()
     {
-        Expr expr = equality();
+        Expr expr = or();
 
         if (match(EQUAL))
         {
@@ -111,6 +205,34 @@ class Parser
                 return new Expr.Assign(name, value);
             }
             error(equals, "Invalid assignment target.");
+        }
+
+        return expr;
+    }
+
+    private Expr or()
+    {
+        Expr expr = and();
+
+        while (match(OR))
+        {
+            Token operator = previous();
+            Expr right = and();
+            expr = new Expr.Logical(expr, operator, right);
+        }
+
+        return expr;
+    }
+
+    private Expr and()
+    {
+        Expr expr = equality();
+
+        while (match(AND))
+        {
+            Token operator = previous();
+            Expr right = equality();
+            expr = new Expr.Logical(expr, operator, right);
         }
 
         return expr;
